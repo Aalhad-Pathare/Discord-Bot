@@ -13,8 +13,11 @@
     "delayed-stream": "^1.0.0",
     "discord-api-types": "^0.26.1",
     "discord-player": "^5.2.2",
-    "discord.js": "^13.6.0",
+    "discord.js": "^12.5.3",
     "dotenv": "^16.0.0",
+    "ffmpeg": "^0.0.4",
+    "ffmpeg-static": "^4.4.1",
+    "fluent-ffmpeg": "^2.1.2",
     "form-data": "^4.0.0",
     "mime-db": "^1.52.0",
     "mime-types": "^2.1.35",
@@ -27,6 +30,7 @@
     "webidl-conversions": "^3.0.1",
     "whatwg-url": "^5.0.0",
     "ws": "^8.5.0",
+    "ytdl-core": "^4.11.0",
     "zod": "^3.14.4"
   },
   "scripts": {

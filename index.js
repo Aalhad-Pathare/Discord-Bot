@@ -1,88 +1,29 @@
 const { isMessageComponentDMInteraction } = require('discord-api-types/utils/v9');
 const { Client, Intents, MessageActionRow, MessageButton, DiscordAPIError } = require('discord.js');
-const { token } = require('./config.json');
+const { prefix, token, clientId, guildId } = require('./config.json');
 //const { TicTacToe } = require('./databaseObjects');
 const { TicTacToe } = require('./databaseObjects.js');
-const { REST } = require("@discord.js/rest")
-const { Routes } = require("@discord-api-types/v9")
-const fs = require("fs")
-const{ Player } = require("discord-player")
-const LOAD_SLASH = process.argv[2] == "load" 
+const { REST } = require("@discordjs/rest")
+const ytdl = require('ytdl-core');
+//const fs = require("fs")
+
+const Discord = require("discord.js");
+const { SpeakingMap } = require('@discordjs/voice');
+
+/** creating client with required intents and logging in with token **/
+
+const client = new Discord.Client({ partials: ['MESSAGE', 'CHANNEL', 'REACTION', 'USER', 'GUILD_MEMBER'],
+                                    intents: [Intents.FLAGS.GUILDS, Intents.FLAGS.GUILD_MESSAGES] });
 
 
-const client = new Client({ intents: [Intents.FLAGS.GUILDS,
-                                      Intents.FLAGS.GUILD_MESSAGES,
-                                       "GUILD_VOICE_STATES"] });
-
-
-
-/** Music Bot **/
-
-client.slashcommands = new Discord.Collection()
-client.player = new Player(client, {
-    ytdlOptions: {
-        quality: "highestaudio",
-        highestWaterMark:  1 << 25
-    }
-})
-
-let commands = []
-
-const slashFiles = fs.readdirSync("./slash").filter(file => file.endsWith(".js"))
-for (const file of slashFiles){
-    const slashcmd = require(`./slash/${file}`)
-    client.slashcommands.set(slashcmd.data.name, slashcmd)
-    if(LOAD_SLASH) commands.push(slashcmd.data.toJSON())
-}
-
-if(LOAD_SLASH){
-    const rest = new REST({version: "9"}).setToken(token)
-    console.log("Deploying slash commands")
-    rest.put(Routes.applicationGuildCommands(clientId, guildId), {body: commands})
-    .then(() =>{
-        console.log("Sucesfully loaded")
-        process.exit(0)
-    }).catch((err) =>{
-        if(err){
-            console.log(err)
-            process.exit(1)
-        }
-    })
-}
-else{
-    client.on("ready", () => {
-        console.log(`Logged in as ${client.user.tag}`)
-    })
-    client.on("interactionCreate", (interaction) => {
-        async function handleCommand() {
-            if (!interaction.isCommand()) return
-
-            const slashcmd = client.slashcommands.get(interaction.commandName)
-            if (!slashcmd) interaction.reply("Not a valid slash command")
-
-            await interaction.deferReply()
-            await slashcmd.run({ client, interaction })
-        }
-        handleCommand()
-    })
-}
-                                       
-client.login(token);
-
-//console.log("1");
-client.once('ready', () => {
-    console.log('Ready!');
-})
-
-client.on('messageCreate', (message) => {
-    if(message.author.id === client.user.id) return;
+client.on('message', async message => {
+    if(message.author.bot) return;
 
     if(message.content === "ping") {
         message.reply("pong");
-    }
-
-    
+    }    
 })
+
 
 /* Tic Tac Toe */
 let EMPTY = Symbol("empty");
@@ -165,9 +106,9 @@ function isGameOver(){
     
 }
 
-client.on('interactionCreate', async interaction => {
+client.on('interactionCreate', async (interaction) => {
     if(!interaction.isButton()) return;
-    if(!interaction.customId.startsWith('tictactoe')) return;
+    if(!interaction.customId === 'tictactoe') return;
 
     if(isGameOver()){
         interaction.update({
@@ -258,13 +199,17 @@ client.on('interactionCreate', async interaction => {
     
 })
 
-client.on('interactionCreate', async interaction => {
+client.on('interactionCreate', async (interaction) => {
     if(!interaction.isCommand()) return;
 
-    const{ commandName } = interaction;
+    const{ commandName, options } = interaction;
+
+    interaction.reply("Launching a comand");
 
     if( commandName === 'tictactoe'){
         //await interaction.reply('Working!');
+        interaction.reply("Launching the tictactoe game");
+        await interaction.deferReply();
 
         tictactoe_state = [
 
@@ -278,9 +223,141 @@ client.on('interactionCreate', async interaction => {
     }
 })
 
+
+
+
+
+/** Music Bot **/
+
+
+                                       
+
+
+//console.log("1");
+client.once('ready', () => {
+    console.log('Ready!');
+});
+client.once('reconnecting', () => {
+    console.log('Reconnecting')
+});
+client.once('disconnect', () => {
+    console.log('Disconnected');
+});
+
+
+
+const queue = new Map();
+
+async function execute(message, serverQueue) {
+    const args = message.content.split(" ");
+  
+    const voiceChannel = message.member.voice.channel;
+    if (!voiceChannel)
+      return message.channel.send(
+        "You need to be in a voice channel to play music!"
+      );
+    const permissions = voiceChannel.permissionsFor(message.client.user);
+    if (!permissions.has("CONNECT") || !permissions.has("SPEAK")) {
+      return message.channel.send(
+        "I need the permissions to join and speak in your voice channel!"
+      );
+    }
+  
+    const songInfo = await ytdl.getInfo(args[1]);
+    const song = {
+          title: songInfo.videoDetails.title,
+          url: songInfo.videoDetails.video_url,
+     };
+  
+    if (!serverQueue) {
+      const queueContruct = {
+        textChannel: message.channel,
+        voiceChannel: voiceChannel,
+        connection: null,
+        songs: [],
+        volume: 5,
+        playing: true
+      };
+  
+      queue.set(message.guild.id, queueContruct);
+  
+      queueContruct.songs.push(song);
+  
+      try {
+        var connection = await voiceChannel.join();
+        queueContruct.connection = connection;
+        play(message.guild, queueContruct.songs[0]);
+      } catch (err) {
+        console.log(err);
+        queue.delete(message.guild.id);
+        return message.channel.send(err);
+      }
+    } else {
+      serverQueue.songs.push(song);
+      return message.channel.send(`${song.title} has been added to the queue!`);
+    }
+  }
+function skip(message, serverQueue){
+    if(!message.member.voice.channel) return message.channel.send(`You have to be in a voice channel to stop the music`);
+    if(!serverQueue) return message.channel.send("There is no song that I could skip!");
+    serverQueue.connection.dispatcher.end();
+}
+
+function stop(message, serverQueue){
+    if(!message.member.voice.channel) return message.channel.send("You have to be in a voice channel to stop the music!");
+    if(!serverQueue) return message.channel.send("There is no song that I could stop!");
+    serverQueue.songs = [];
+    serverQueue.connection.dispatcher.end();
+}
+
+function play(guild, song) {
+    const serverQueue = queue.get(guild.id);
+    if (!song) {
+      serverQueue.voiceChannel.leave();
+      queue.delete(guild.id);
+      return;
+    }
+  
+    const dispatcher = serverQueue.connection
+      .play(ytdl(song.url))
+      .on("finish", () => {
+        serverQueue.songs.shift();
+        play(guild, serverQueue.songs[0]);
+      })
+      .on("error", error => console.error(error));
+    dispatcher.setVolumeLogarithmic(serverQueue.volume / 5);
+    serverQueue.textChannel.send(`Start playing: **${song.title}**`);
+  }
+
+client.on('message', async message =>{
+    if(message.author.bot) return;
+
+    if(!message.content.startsWith(prefix)) return;
+
+    const serverQueue = queue.get(message.guild.id);
+
+    if(message.content.startsWith(`${prefix}play`)) {
+        execute(message, serverQueue);
+        return;
+    } else if (message.content.startsWith(`${prefix}skip`)){
+        skip(message, serverQueue);
+        return;
+    } else if (message.content.startsWith(`${prefix}stop`)){
+        stop(message, serverQueue);
+        return;
+    } else if (message.content.startsWith(`${prefix}help`)){
+        message.channel.send("!play <name> to play a song");
+        message.channel.send("!skip to skip the song in queue");
+        message.channel.send("!stop to stop the bot");
+        
+    } else {
+        message.channel.send("Please enter a valid command! Type in !help for help");
+    }
+})
+
+
+client.login(token);
 /** **/
-
-
 
 
 
